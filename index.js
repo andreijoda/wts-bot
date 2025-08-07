@@ -34,11 +34,10 @@ client.on('message_create', async (msg) => {
   const chat = await msg.getChat();
 
   if (msg.body === '!help') {
-      await msg.reply('getvendas QUATIDADE - Ver Todas Vendas.');
-      await msg.reply('vervenda #VENDA - Ver informações da venda.');
+    await msg.reply('getvendas QUATIDADE - Ver Todas Vendas.');
+    await msg.reply('vervenda #VENDA - Ver informações da venda.');
   }
 
-  // COMANDO 1: pegar id do grupo
   if (msg.body === '!getgrupo') {
     if (chat.isGroup) {
       await msg.reply(`ID deste grupo é: ${chat.id._serialized}`);
@@ -47,54 +46,49 @@ client.on('message_create', async (msg) => {
     }
   }
 
-  // COMANDO 2: listar últimas vendas
   if (msg.body.startsWith('!getvendas')) {
-  if (!chat.isGroup) {
-    await msg.reply('Esse comando só funciona dentro de grupos.');
-    return;
-  }
-
-  // Pega o número passado no comando, exemplo: "!getvendas 5"
-  const args = msg.body.split(' ');
-  let limit = 5; // padrão mostrar 5 vendas
-  if (args[1]) {
-    const n = parseInt(args[1], 10);
-    if (!isNaN(n) && n > 0) {
-      limit = n;
-    }
-  }
-
-  try {
-    await msg.reply('Consultando vendas...');
-
-    const apiUrl = `https://api.mercadolibre.com/orders/search?seller=${ML_USER_ID}&order.status=paid&access_token=${ML_ACCESS_TOKEN}`;
-    const { data } = await axios.get(apiUrl);
-
-    if (!data.results.length) {
-      await msg.reply('Nenhuma venda encontrada.');
+    if (!chat.isGroup) {
+      await msg.reply('Esse comando só funciona dentro de grupos.');
       return;
     }
 
-    // Pega as últimas "limit" vendas
-    const ultimas = data.results.slice().reverse().slice(0, limit);
-    let texto = '*Últimas vendas:*\n\n';
-
-    for (const order of ultimas) {
-      const produto = order.order_items[0].item.title;
-      const numeroPedido = order.id;
-      const dataVenda = new Date(order.date_created).toLocaleString('pt-BR');
-      texto += `📍Produto: ${produto}\n  🆔Pedido: #${numeroPedido}\n  🗓️Data: ${dataVenda}\n\n`;
+    const args = msg.body.split(' ');
+    let limit = 5;
+    if (args[1]) {
+      const n = parseInt(args[1], 10);
+      if (!isNaN(n) && n > 0) {
+        limit = n;
+      }
     }
 
-    await msg.reply(texto.trim());
-  } catch (err) {
-    console.error("Erro ao consultar vendas:", err.message);
-    await msg.reply('Erro ao consultar vendas.');
+    try {
+      await msg.reply('Consultando vendas...');
+
+      const apiUrl = `https://api.mercadolibre.com/orders/search?seller=${ML_USER_ID}&order.status=paid&access_token=${ML_ACCESS_TOKEN}`;
+      const { data } = await axios.get(apiUrl);
+
+      if (!data.results.length) {
+        await msg.reply('Nenhuma venda encontrada.');
+        return;
+      }
+
+      const ultimas = data.results.slice().reverse().slice(0, limit);
+      let texto = '*Últimas vendas:*\n\n';
+
+      for (const order of ultimas) {
+        const produto = order.order_items[0].item.title;
+        const numeroPedido = order.id;
+        const dataVenda = new Date(order.date_created).toLocaleString('pt-BR');
+        texto += `📍Produto: ${produto}\n  🆔Pedido: #${numeroPedido}\n  🗓️Data: ${dataVenda}\n\n`;
+      }
+
+      await msg.reply(texto.trim());
+    } catch (err) {
+      console.error("Erro ao consultar vendas:", err.message);
+      await msg.reply('Erro ao consultar vendas.');
+    }
   }
-}
 
-
-  // COMANDO 3: ver venda por número
   if (msg.body.startsWith('!vervenda ')) {
     const numero = msg.body.split(' ')[1];
 
@@ -116,6 +110,26 @@ client.on('message_create', async (msg) => {
       const cliente = order.buyer.nickname || order.buyer.first_name || "Desconhecido";
       const dataVenda = new Date(order.date_created).toLocaleString('pt-BR');
 
+      // Verifica o método de envio
+      let metodoEnvio = "desconhecido";
+      const shipmentId = order.shipping?.id;
+      if (shipmentId) {
+        try {
+          const shipUrl = `https://api.mercadolibre.com/shipments/${shipmentId}?access_token=${ML_ACCESS_TOKEN}`;
+          const { data: shipping } = await axios.get(shipUrl);
+          const tipo = shipping.logistic_type;
+          if (tipo === "self_service") {
+            metodoEnvio = "Flex (envio no mesmo dia)";
+          } else if (tipo === "drop_off") {
+            metodoEnvio = "Agência";
+          } else {
+            metodoEnvio = tipo;
+          }
+        } catch (err) {
+          console.error("Erro ao buscar método de envio:", err.message);
+        }
+      }
+
       const texto =
 `👀 *Visualizando Venda*
 
@@ -126,6 +140,7 @@ client.on('message_create', async (msg) => {
 💵 Preço unitário: R$ ${preco.toFixed(2)}
 💰 Valor total: R$ ${total.toFixed(2)}
 
+🚚 Envio: ${metodoEnvio}
 👤 Comprador: ${cliente}
 
 📝 Pedido: #${numero}
@@ -153,7 +168,28 @@ async function checkNewSales() {
 
         const produto = order.order_items[0].item.title;
         const variacao = order.order_items[0].item.variation_attributes?.map(v => v.value_name).join(" / ") || "-";
-        await notifyWhatsapp(produto, variacao);
+
+        // Verifica método de envio
+        let metodoEnvio = "desconhecido";
+        const shipmentId = order.shipping?.id;
+        if (shipmentId) {
+          try {
+            const shipUrl = `https://api.mercadolibre.com/shipments/${shipmentId}?access_token=${ML_ACCESS_TOKEN}`;
+            const { data: shipping } = await axios.get(shipUrl);
+            const tipo = shipping.logistic_type;
+            if (tipo === "self_service") {
+            metodoEnvio = "Flex (envio no mesmo dia)";
+          } else if (tipo === "drop_off") {
+            metodoEnvio = "Agência";
+          } else {
+            metodoEnvio = tipo;
+          }
+          } catch (err) {
+            console.error("Erro ao buscar método de envio (notificação):", err.message);
+          }
+        }
+
+        await notifyWhatsapp(produto, variacao, metodoEnvio);
       }
     }
   } catch (err) {
@@ -161,10 +197,10 @@ async function checkNewSales() {
   }
 }
 
-async function notifyWhatsapp(produto, variacao) {
+async function notifyWhatsapp(produto, variacao, metodoEnvio) {
   try {
     const chat = await client.getChatById(WHATSAPP_GROUP_ID);
-    const msg = `📦 Você vendeu! ${produto} (${variacao})`;
+    const msg = `📦 Você vendeu! ${produto} (${variacao})\n🚚 Envio: ${metodoEnvio}`;
     await chat.sendMessage(msg);
     console.log("Mensagem enviada:", msg);
   } catch (err) {
