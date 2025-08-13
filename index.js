@@ -45,13 +45,13 @@ async function refreshAccessToken() {
     saveAccessToken(data.access_token);
     console.log("✅ Novo access token gerado e salvo.");
     const chatToken = await client.getChatById(WHATSAPP_GROUP_ID);
-    const msgOk = "✅ Novo access token gerado e salvo.";
-    await chatToken.sendMessage(msgOk);
+    // const msgOk = "✅ Novo access token gerado e salvo.";
+    // await chatToken.sendMessage(msgOk);
     return data.access_token;
   } catch (err) {
     console.error("❌ Erro ao renovar access token:", err.message);
     const chatTokenError = await client.getChatById(WHATSAPP_GROUP_ID);
-    const msgError = "✅ Novo access token gerado e salvo.";
+    const msgError = "❌ Erro ao renovar access token:";
     await chatTokenError.sendMessage(msgError);
     return null;
   }
@@ -183,20 +183,20 @@ client.on("message_create", async (msg) => {
       }
 
       const texto =
-`👀 *Visualizando Venda*
+        `👀 *Visualizando Venda*
 
-📦 Produto: ${item}
-🎨 Variação: ${variacao}
-🔢 Quantidade: ${qtd}
+        📦 Produto: ${item}
+        🎨 Variação: ${variacao}
+        🔢 Quantidade: ${qtd}
 
-💵 Preço unitário: R$ ${preco.toFixed(2)}
-💰 Valor total: R$ ${total.toFixed(2)}
+        💵 Preço unitário: R$ ${preco.toFixed(2)}
+        💰 Valor total: R$ ${total.toFixed(2)}
 
-🚚 Envio: ${metodoEnvio}
-👤 Comprador: ${cliente}
+        🚚 Envio: ${metodoEnvio}
+        👤 Comprador: ${cliente}
 
-📝 Pedido: #${numero}
-📅 Data da venda: ${dataVenda}`;
+        📝 Pedido: #${numero}
+        📅 Data da venda: ${dataVenda}`;
 
       await msg.reply(texto);
     } catch (err) {
@@ -221,6 +221,11 @@ async function checkNewSales() {
 
         const produto = order.order_items[0].item.title;
         const variacao = order.order_items[0].item.variation_attributes?.map(v => v.value_name).join(" / ") || "-";
+        const qtd = order.order_items[0].quantity;
+        const preco = order.order_items[0].unit_price;
+        const total = order.total_amount;
+        const cliente = order.buyer.nickname || order.buyer.first_name || "Desconhecido";
+        const dataVenda = new Date(order.date_created).toLocaleString("pt-BR");
 
         let metodoEnvio = "desconhecido";
         const shipmentId = order.shipping?.id;
@@ -237,7 +242,7 @@ async function checkNewSales() {
           }
         }
 
-        await notifyWhatsapp(produto, variacao, metodoEnvio);
+        await notifyWhatsapp(produto, variacao, metodoEnvio, qtd, preco, total, cliente, dataVenda);
       }
     }
   } catch (err) {
@@ -245,11 +250,26 @@ async function checkNewSales() {
   }
 }
 
-async function notifyWhatsapp(produto, variacao, metodoEnvio) {
+async function notifyWhatsapp(produto, variacao, metodoEnvio, qtd, preco, total, cliente, dataVenda) {
   try {
     const chat = await client.getChatById(WHATSAPP_GROUP_ID);
     const msg = `📦 Você vendeu! ${produto} (${variacao})\n🚚 Envio: ${metodoEnvio}`;
-    await chat.sendMessage(msg);
+    const texto =
+      `🤑 *Você vendeu!*
+
+      📦 Produto: ${item}
+      🎨 Variação: ${variacao}
+      🔢 Quantidade: ${qtd}
+
+      💵 Preço unitário: R$ ${preco.toFixed(2)}
+      💰 Valor total: R$ ${total.toFixed(2)}
+
+      🚚 Envio: ${metodoEnvio}
+      👤 Comprador: ${cliente}
+
+      📝 Pedido: #${numero}
+      📅 Data da venda: ${dataVenda}`;
+    await chat.sendMessage(texto);
     console.log("Mensagem enviada:", msg);
   } catch (err) {
     console.log("Erro ao enviar mensagem:", err.message);
