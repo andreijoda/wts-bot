@@ -253,11 +253,10 @@ async function checkNewSales() {
 async function notifyWhatsapp(produto, variacao, metodoEnvio, qtd, preco, total, cliente, dataVenda) {
   try {
     const chat = await client.getChatById(WHATSAPP_GROUP_ID);
-    const msg = `📦 Você vendeu! ${produto} (${variacao})\n🚚 Envio: ${metodoEnvio}`;
-    const texto =
+    const msg =
       `🤑 *Você vendeu!*
 
-      📦 Produto: ${item}
+      📦 Produto: ${produto}
       🎨 Variação: ${variacao}
       🔢 Quantidade: ${qtd}
 
@@ -269,7 +268,7 @@ async function notifyWhatsapp(produto, variacao, metodoEnvio, qtd, preco, total,
 
       📝 Pedido: #${numero}
       📅 Data da venda: ${dataVenda}`;
-    await chat.sendMessage(texto);
+    await chat.sendMessage(msg);
     console.log("Mensagem enviada:", msg);
   } catch (err) {
     console.log("Erro ao enviar mensagem:", err.message);
