@@ -51,8 +51,8 @@ async function refreshAccessToken() {
   } catch (err) {
     console.error("❌ Erro ao renovar access token:", err.message);
     const chatTokenError = await client.getChatById(WHATSAPP_GROUP_ID);
-    const msgError = "❌ Erro ao renovar access token:";
-    await chatTokenError.sendMessage(msgError);
+    //const msgError = "❌ Erro ao renovar access token:";
+    //await chatTokenError.sendMessage(msgError);
     return null;
   }
 }
@@ -274,3 +274,4 @@ async function notifyWhatsapp(produto, variacao, metodoEnvio, qtd, preco, total,
     console.log("Erro ao enviar mensagem:", err.message);
   }
 }
+
