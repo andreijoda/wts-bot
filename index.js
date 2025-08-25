@@ -99,7 +99,7 @@ client.on("message_create", async (msg) => {
   }
 
   if (msg.body === "!getgrupo") {
-    if (chat.isGroup) {
+    if (chat.isUser) {
       await msg.reply(`ID deste grupo é: ${chat.id._serialized}`);
     } else {
       await msg.reply("Esse comando só funciona dentro de grupos.");
@@ -107,7 +107,7 @@ client.on("message_create", async (msg) => {
   }
 
   if (msg.body.startsWith("!getvendas")) {
-    if (!chat.isGroup) {
+    if (!chat.isUser) {
       await msg.reply("Esse comando só funciona dentro de grupos.");
       return;
     }
@@ -274,4 +274,5 @@ async function notifyWhatsapp(produto, variacao, metodoEnvio, qtd, preco, total,
     console.log("Erro ao enviar mensagem:", err.message);
   }
 }
+
 
