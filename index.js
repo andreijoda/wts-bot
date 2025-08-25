@@ -16,6 +16,24 @@ const {
 const TOKEN_FILE = "./ml_token.json";
 let lastOrderDate = new Date(); // usado para não repetir vendas antigas
 
+const SENT_FILE = "./sent_orders.json";
+
+// Carrega IDs das vendas já enviadas
+function loadSentOrders() {
+  try {
+    if (!fs.existsSync(SENT_FILE)) return [];
+    const data = JSON.parse(fs.readFileSync(SENT_FILE, "utf8"));
+    return Array.isArray(data) ? data : []; // garante que seja array
+  } catch {
+    return [];
+  }
+}
+
+// Salva IDs atualizados
+function saveSentOrders(sentOrders) {
+  fs.writeFileSync(SENT_FILE, JSON.stringify(sentOrders, null, 2));
+}
+
 // Recupera o access token do JSON
 function getAccessToken() {
   const data = JSON.parse(fs.readFileSync(TOKEN_FILE, "utf8"));
@@ -45,12 +63,12 @@ async function refreshAccessToken() {
     saveAccessToken(data.access_token);
     console.log("✅ Novo access token gerado e salvo.");
     const chatToken = await client.getChatById(WHATSAPP_GROUP_ID);
-    // const msgOk = "✅ Novo access token gerado e salvo.";
-    // await chatToken.sendMessage(msgOk);
+    const msgOk = "✅ Novo access token gerado e salvo.";
+    await chatToken.sendMessage(msgOk);
     return data.access_token;
   } catch (err) {
     console.error("❌ Erro ao renovar access token:", err.message);
-    const chatTokenError = await client.getChatById(WHATSAPP_GROUP_ID);
+    //const chatTokenError = await client.getChatById(WHATSAPP_GROUP_ID);
     //const msgError = "❌ Erro ao renovar access token:";
     //await chatTokenError.sendMessage(msgError);
     return null;
@@ -87,6 +105,7 @@ client.on("qr", (qr) => {
 client.on("ready", async () => {
   console.log("✅ WhatsApp conectado!");
   await refreshAccessToken(); // Garante token válido no início
+  checkNewSales();
   setInterval(checkNewSales, 60 * 1000);
 });
 
@@ -99,19 +118,10 @@ client.on("message_create", async (msg) => {
   }
 
   if (msg.body === "!getgrupo") {
-    if (chat.isUser) {
-      await msg.reply(`ID deste grupo é: ${chat.id._serialized}`);
-    } else {
-      await msg.reply("Esse comando só funciona dentro de grupos.");
-    }
+    await msg.reply(`ID deste grupo é: ${chat.id._serialized}`);
   }
 
   if (msg.body.startsWith("!getvendas")) {
-    if (!chat.isUser) {
-      await msg.reply("Esse comando só funciona dentro de grupos.");
-      return;
-    }
-
     const args = msg.body.split(" ");
     let limit = 5;
     if (args[1]) {
@@ -183,20 +193,20 @@ client.on("message_create", async (msg) => {
       }
 
       const texto =
-        `👀 *Visualizando Venda*
+`👀 *Visualizando Venda*
 
-        📦 Produto: ${item}
-        🎨 Variação: ${variacao}
-        🔢 Quantidade: ${qtd}
+📦 Produto: ${item}
+🎨 Variação: ${variacao}
+🔢 Quantidade: ${qtd}
 
-        💵 Preço unitário: R$ ${preco.toFixed(2)}
-        💰 Valor total: R$ ${total.toFixed(2)}
+💵 Preço unitário: R$ ${preco.toFixed(2)}
+💰 Valor total: R$ ${total.toFixed(2)}
 
-        🚚 Envio: ${metodoEnvio}
-        👤 Comprador: ${cliente}
+🚚 Envio: ${metodoEnvio}
+👤 Comprador: ${cliente}
 
-        📝 Pedido: #${numero}
-        📅 Data da venda: ${dataVenda}`;
+📝 Pedido: #${numero}
+📅 Data da venda: ${dataVenda}`;
 
       await msg.reply(texto);
     } catch (err) {
@@ -208,17 +218,19 @@ client.on("message_create", async (msg) => {
 
 client.initialize();
 
+// Verifica e envia todas vendas (novas e antigas)
 async function checkNewSales() {
   try {
     const token = await getValidAccessToken();
     const apiUrl = `https://api.mercadolibre.com/orders/search?seller=${ML_USER_ID}&order.status=paid&access_token=${token}`;
     const { data } = await axios.get(apiUrl);
 
-    for (const order of data.results) {
-      const orderDate = new Date(order.date_created);
-      if (orderDate > lastOrderDate) {
-        lastOrderDate = orderDate;
+    let sentOrders = loadSentOrders();
+    let novos = [];
 
+    for (const order of data.results) {
+      if (!sentOrders.includes(order.id)) {
+        // Venda ainda não enviada
         const produto = order.order_items[0].item.title;
         const variacao = order.order_items[0].item.variation_attributes?.map(v => v.value_name).join(" / ") || "-";
         const qtd = order.order_items[0].quantity;
@@ -231,48 +243,57 @@ async function checkNewSales() {
         const shipmentId = order.shipping?.id;
         if (shipmentId) {
           try {
-            const token = await getValidAccessToken();
             const shipUrl = `https://api.mercadolibre.com/shipments/${shipmentId}?access_token=${token}`;
             const { data: shipping } = await axios.get(shipUrl);
             const tipo = shipping.logistic_type;
             metodoEnvio = tipo === "self_service" ? "Flex (mesmo dia)" :
                           tipo === "drop_off" ? "Agência" : tipo;
           } catch (err) {
-            console.error("Erro ao buscar envio (notificação):", err.message);
+            console.error("Erro ao buscar envio:", err.message);
           }
         }
 
-        await notifyWhatsapp(produto, variacao, metodoEnvio, qtd, preco, total, cliente, dataVenda);
+        // Notifica
+        await notifyWhatsapp(produto, variacao, qtd, preco, total, cliente, dataVenda, metodoEnvio, order.id);
+
+        // Marca como enviada
+        sentOrders.push(order.id);
+        novos.push(order.id);
       }
+    }
+
+    if (novos.length > 0) {
+      saveSentOrders(sentOrders);
+      console.log(`✅ ${novos.length} novas vendas registradas e enviadas.`);
+    } else {
+      console.log("Nenhuma nova venda encontrada.");
     }
   } catch (err) {
     console.error("Erro ao consultar API ML:", err.message);
   }
 }
 
-async function notifyWhatsapp(produto, variacao, metodoEnvio, qtd, preco, total, cliente, dataVenda) {
+async function notifyWhatsapp(produto, variacao, qtd, preco, total, cliente, dataVenda, metodoEnvio, numero) {
   try {
     const chat = await client.getChatById(WHATSAPP_GROUP_ID);
     const msg =
-      `🤑 *Você vendeu!*
+`🤑 *Venda Realizada!*
 
-      📦 Produto: ${produto}
-      🎨 Variação: ${variacao}
-      🔢 Quantidade: ${qtd}
+📦 Produto: ${produto}
+🎨 Variação: ${variacao}
+🔢 Quantidade: ${qtd}
 
-      💵 Preço unitário: R$ ${preco.toFixed(2)}
-      💰 Valor total: R$ ${total.toFixed(2)}
+💵 Preço unitário: R$ ${preco.toFixed(2)}
+💰 Valor total: R$ ${total.toFixed(2)}
 
-      🚚 Envio: ${metodoEnvio}
-      👤 Comprador: ${cliente}
+🚚 Envio: ${metodoEnvio}
+👤 Comprador: ${cliente}
 
-      📝 Pedido: #${numero}
-      📅 Data da venda: ${dataVenda}`;
+📝 Pedido: #${numero}
+📅 Data da venda: ${dataVenda}`;
     await chat.sendMessage(msg);
     console.log("Mensagem enviada:", msg);
   } catch (err) {
     console.log("Erro ao enviar mensagem:", err.message);
   }
 }
-
-
